@@ -5,7 +5,7 @@ import { api } from '../../../services/api';
 import { speechProvider } from '../../../services/speech';
 import {
   Mic, MicOff, Send, Volume2, VolumeX, ShieldAlert,
-  Sparkles, CheckCircle2, User, Bot, RefreshCw, ArrowRight, CheckSquare
+  Sparkles, CheckCircle2, User, Bot, RefreshCw, ArrowRight, CheckSquare, Leaf, HeartPulse
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -30,6 +30,8 @@ export function IntakePage() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [redFlagAlert, setRedFlagAlert] = useState<any | null>(null);
   const [isComplete, setIsComplete] = useState(false);
+  const [treatmentSystem, setTreatmentSystem] = useState<'ALLOPATHY' | 'AYURVEDA' | 'HOMEOPATHY' | null>(null);
+  const [treatmentChoiceRequired, setTreatmentChoiceRequired] = useState(false);
 
   const activeLangRef = useRef<LanguageCode>(language);
   useEffect(() => {
@@ -46,8 +48,20 @@ export function IntakePage() {
     scrollToBottom();
   }, [messages, touchOptions]);
 
-  // Start AI intake session on mount
+  // Determine the treatment system from the visit. AYUSH visits let the patient choose Ayurveda or Homeopathy.
   useEffect(() => {
+    const storedVisit = localStorage.getItem('medikiosk_active_visit');
+    const parsedVisit = storedVisit ? JSON.parse(storedVisit) : null;
+    const dept = `${parsedVisit?.department?.code || parsedVisit?.departmentCode || ''} ${parsedVisit?.department?.name || parsedVisit?.departmentName || ''}`.toLowerCase();
+    if (/homeopath/.test(dept)) setTreatmentSystem('HOMEOPATHY');
+    else if (/ayush|ayurved/.test(dept)) {
+      setTreatmentChoiceRequired(true);
+    } else setTreatmentSystem('ALLOPATHY');
+  }, []);
+
+  // Start AI intake session after the treatment system is known.
+  useEffect(() => {
+    if (!treatmentSystem || treatmentChoiceRequired) return;
     let isMounted = true;
 
     const initSession = async () => {
@@ -56,25 +70,18 @@ export function IntakePage() {
         const storedVisit = localStorage.getItem('medikiosk_active_visit');
         const parsedVisit = storedVisit ? JSON.parse(storedVisit) : null;
         const vId = visitId && visitId !== 'active' ? visitId : (parsedVisit?.id || 'active');
-
         const currentLang = activeLangRef.current;
-        const res = await api.conversation.start(vId, currentLang.toUpperCase());
+        const res = await api.conversation.start(vId, currentLang.toUpperCase(), treatmentSystem !== 'ALLOPATHY', treatmentSystem);
 
         if (isMounted && res?.session) {
           setSession(res.session);
           const initialMsg: ChatMessage = {
-            id: res.message.id || 'welcome',
-            role: 'AI',
-            content: res.message.content,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            options: res.touchOptions || [],
+            id: res.message.id || 'welcome', role: 'AI', content: res.message.content,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), options: res.touchOptions || [],
           };
           setMessages([initialMsg]);
           setTouchOptions(res.touchOptions || []);
-
-          if (audioEnabled) {
-            speechProvider.speak(res.message.content, currentLang);
-          }
+          if (audioEnabled) speechProvider.speak(res.message.content, currentLang);
         }
       } catch (err) {
         console.error('Conversation init error:', err);
@@ -84,13 +91,18 @@ export function IntakePage() {
     };
 
     initSession();
-
     return () => {
       isMounted = false;
       speechProvider.stopListening();
       speechProvider.stopSpeaking();
     };
-  }, []);
+  }, [treatmentSystem, treatmentChoiceRequired]);
+
+  const chooseTreatmentSystem = (system: 'AYURVEDA' | 'HOMEOPATHY') => {
+    localStorage.setItem('medikiosk_treatment_system', system);
+    setTreatmentSystem(system);
+    setTreatmentChoiceRequired(false);
+  };
 
   const handleSendMessage = async (textToSend: string, method: 'VOICE' | 'TEXT' | 'TOUCH' = 'TEXT') => {
     if (!textToSend.trim() || isProcessing) return;
@@ -118,6 +130,7 @@ export function IntakePage() {
         content: textToSend.trim(),
         inputMethod: method,
         language: currentLang.toUpperCase(),
+        treatmentSystem: treatmentSystem || undefined,
       });
 
       if (res?.nextQuestion) {
@@ -229,6 +242,34 @@ export function IntakePage() {
   const replayMessage = (content: string) => {
     speechProvider.speak(content, activeLangRef.current);
   };
+
+  if (treatmentChoiceRequired) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 p-8">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center"><Leaf className="w-7 h-7" /></div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Choose your treatment system</h1>
+              <p className="text-sm text-slate-500">The chatbot will ask questions specific to the selected system.</p>
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <button onClick={() => chooseTreatmentSystem('AYURVEDA')} className="p-5 rounded-2xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 text-left transition-all">
+              <Leaf className="w-7 h-7 text-amber-700 mb-3" />
+              <div className="font-bold text-slate-900">Ayurveda</div>
+              <div className="text-xs text-slate-600 mt-1">Diet, digestion, routine, sleep and symptom patterns.</div>
+            </button>
+            <button onClick={() => chooseTreatmentSystem('HOMEOPATHY')} className="p-5 rounded-2xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 text-left transition-all">
+              <HeartPulse className="w-7 h-7 text-blue-700 mb-3" />
+              <div className="font-bold text-slate-900">Homeopathy</div>
+              <div className="text-xs text-slate-600 mt-1">Individual symptom sensations and better/worse modalities.</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-between p-2 sm:p-6">

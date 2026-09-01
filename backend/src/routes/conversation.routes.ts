@@ -3,7 +3,7 @@ import https from 'https';
 import prisma from '../config/db.js';
 import { getAIProvider } from '../ai/AIProvider.js';
 import { RedFlagEngine } from '../ai/RedFlagEngine.js';
-import { createInitialClinicalState, type ClinicalState } from '../ai/ClinicalState.js';
+import { createInitialClinicalState, type ClinicalState, type TreatmentSystem } from '../ai/ClinicalState.js';
 import { createAuditLog } from '../middleware/audit.js';
 import { AUDIT_ACTIONS, SOCKET_EVENTS } from '../config/constants.js';
 import type { AuthRequest } from '../middleware/auth.js';
@@ -65,7 +65,7 @@ async function canAccessPatient(req: AuthRequest, patientId: string): Promise<bo
  * Initialize a new AI conversation session for a visit.
  */
 router.post('/start', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { visitId, language = 'EN', isAyush = false } = req.body;
+  const { visitId, language = 'EN', isAyush = false, treatmentSystem } = req.body;
 
   if (!visitId) {
     res.status(400).json({ error: 'visitId is required' });
@@ -87,7 +87,13 @@ router.post('/start', async (req: AuthRequest, res: Response): Promise<void> => 
   }
 
   const initialLang = (language.toUpperCase() as 'EN' | 'HI' | 'GU') || 'EN';
-  const initialState = createInitialClinicalState(initialLang);
+  const departmentText = `${visit.department?.code || ''} ${visit.department?.name || ''}`.toLowerCase();
+  const requestedSystem = String(treatmentSystem || '').toUpperCase();
+  const inferredSystem: TreatmentSystem = requestedSystem === 'HOMEOPATHY' || requestedSystem === 'AYURVEDA' || requestedSystem === 'ALLOPATHY'
+    ? requestedSystem as TreatmentSystem
+    : /homeopath/.test(departmentText) ? 'HOMEOPATHY'
+      : /ayush|ayurved/.test(departmentText) || isAyush ? 'AYURVEDA' : 'ALLOPATHY';
+  const initialState = createInitialClinicalState(initialLang, inferredSystem);
 
   const session = await prisma.conversationSession.create({
     data: {
@@ -105,10 +111,11 @@ router.post('/start', async (req: AuthRequest, res: Response): Promise<void> => 
     data: { status: 'IN_INTAKE' },
   });
 
+  const systemLabel = inferredSystem === 'AYURVEDA' ? 'Ayurvedic' : inferredSystem === 'HOMEOPATHY' ? 'Homeopathic' : 'Allopathic';
   const initialGreetings = {
-    EN: 'Hello. I am MediKiosk, your clinical intake assistant. Please tell me what symptoms or health concerns brought you to the hospital today.',
-    HI: 'नमस्ते। मैं मेडीकियोस्क क्लिनिकल सहायक हूँ। कृपया मुझे बताएं कि आज आपको क्या परेशानी या लक्षण महसूस हो रहे हैं?',
-    GU: 'નમસ્તે. હું મેડીકિયોસ્ક સહાયક છું. કૃપા કરીને મને જણાવો કે આજે તમને કઈ તકલીફ કે લક્ષણો થઈ રહ્યા છે?',
+    EN: `Hello. I am MediKiosk, your ${systemLabel} clinical intake assistant. Please tell me what symptoms or health concerns brought you to the hospital today.`,
+    HI: `नमस्ते। मैं मेडीकियोस्क ${systemLabel === 'Ayurvedic' ? 'आयुर्वेदिक' : systemLabel === 'Homeopathic' ? 'होम्योपैथिक' : 'क्लिनिकल'} इनटेक सहायक हूँ। कृपया बताएं कि आज आपको क्या परेशानी या लक्षण हैं।`,
+    GU: `નમસ્તે. હું મેડીકિયોસ્ક ${systemLabel === 'Ayurvedic' ? 'આયુર્વેદિક' : systemLabel === 'Homeopathic' ? 'હોમિયોપેથીક' : 'ક્લિનિકલ'} ઇન્ટેક સહાયક છું. કૃપા કરીને જણાવો કે આજે તમને કઈ તકલીફ કે લક્ષણો છે.`,
   };
 
   const initialOptions = {
@@ -134,7 +141,7 @@ router.post('/start', async (req: AuthRequest, res: Response): Promise<void> => 
     action: AUDIT_ACTIONS.START_INTAKE,
     resourceType: 'CONVERSATION_SESSION',
     resourceId: session.id,
-    details: { visitId, language: initialLang },
+    details: { visitId, language: initialLang, treatmentSystem: inferredSystem },
   });
 
   res.status(201).json({
@@ -197,7 +204,7 @@ router.post('/:sessionId/switch-language', async (req: AuthRequest, res: Respons
   }
 
   // Generate appropriate touch options in target language for current state
-  const nextQ = await aiProvider.generateNextQuestion(state, lang);
+  const nextQ = await aiProvider.generateNextQuestion(state, lang, state.treatmentSystem === 'AYURVEDA' || state.treatmentSystem === 'HOMEOPATHY');
 
   await prisma.conversationSession.update({
     where: { id: sessionId },
@@ -224,7 +231,7 @@ router.post('/:sessionId/switch-language', async (req: AuthRequest, res: Respons
  */
 router.post('/:sessionId/message', async (req: AuthRequest, res: Response): Promise<void> => {
   const sessionId = typeof req.params.sessionId === 'string' ? req.params.sessionId : req.params.sessionId[0];
-  const { content, inputMethod = 'VOICE', language = 'EN', rawTranscript, isAyush = false } = req.body;
+  const { content, inputMethod = 'VOICE', language = 'EN', rawTranscript } = req.body;
 
   if (!content || !content.trim()) {
     res.status(400).json({ error: 'Message content is required' });
@@ -329,7 +336,7 @@ router.post('/:sessionId/message', async (req: AuthRequest, res: Response): Prom
   }
 
   // 5. Generate Next Dynamic Context-Specific Question
-  const nextQ = await aiProvider.generateNextQuestion(state, currentLang, isAyush);
+  const nextQ = await aiProvider.generateNextQuestion(state, currentLang, state.treatmentSystem === 'AYURVEDA' || state.treatmentSystem === 'HOMEOPATHY');
   state.questionsAsked = [...(state.questionsAsked || []), nextQ.question];
 
   // 6. Save Updated State back to DB

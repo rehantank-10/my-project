@@ -1,4 +1,8 @@
+export type TreatmentSystem = 'ALLOPATHY' | 'AYURVEDA' | 'HOMEOPATHY';
+
 export interface ClinicalState {
+  // Treatment system selected for this intake; controls the clinical interview style.
+  treatmentSystem: TreatmentSystem;
   // Core Chief Complaint
   chiefComplaint: string | null;
   chiefComplaintOriginal: string | null; // Raw in patient's language
@@ -87,8 +91,9 @@ export interface QuestionOutput {
   clinicalRationale: string;
 }
 
-export function createInitialClinicalState(language: 'EN' | 'HI' | 'GU' = 'EN'): ClinicalState {
+export function createInitialClinicalState(language: 'EN' | 'HI' | 'GU' = 'EN', treatmentSystem: TreatmentSystem = 'ALLOPATHY'): ClinicalState {
   return {
+    treatmentSystem,
     chiefComplaint: null,
     chiefComplaintOriginal: null,
     symptoms: [],

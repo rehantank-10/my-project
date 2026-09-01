@@ -161,10 +161,10 @@ export const api = {
   },
 
   conversation: {
-    start: (visitId: string, language: string = 'EN', isAyush = false) =>
+    start: (visitId: string, language: string = 'EN', isAyush = false, treatmentSystem?: 'ALLOPATHY' | 'AYURVEDA' | 'HOMEOPATHY') =>
       request('/conversation/start', {
         method: 'POST',
-        body: JSON.stringify({ visitId, language, isAyush }),
+        body: JSON.stringify({ visitId, language, isAyush, treatmentSystem }),
       }),
     sendMessage: (sessionId: string, data: { content: string; inputMethod?: string; language?: string; rawTranscript?: string; isAyush?: boolean }) =>
       request(`/conversation/${sessionId}/message`, {
