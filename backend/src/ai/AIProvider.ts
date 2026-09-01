@@ -277,6 +277,28 @@ export class UniversalClinicalEngine implements AIProvider {
       { EN: ['No, that covers everything', 'Yes, I want to add something'], HI: ['नहीं, सब बता दिया', 'हाँ, कुछ और बताना है'], GU: ['ના, બધું જણાવી દીધું', 'હા, કંઈક વધુ જણાવવું છે'] }, 'CLOSING', 'Confirming completeness before clinician review');
   }
 
+  async generateClinicalSummary(state: ClinicalState, patient: any, vitals?: any, _documents?: any[]): Promise<any> {
+    const s = state.symptoms?.[0];
+    const hpi = state.chiefComplaint
+      ? `Patient presents with ${state.chiefComplaint}${s?.onset ? ` since ${s.onset}` : ''}${s?.severity ? ` with severity rated ${s.severity}/10` : ''}${s?.character ? `. Sensation/character described as: ${s.character}` : ''}.`
+      : 'Patient presented for clinical evaluation.';
+
+    return {
+      overview: `Clinical intake summary for ${patient?.name || 'patient'} (${patient?.age || 'N/A'}y, ${patient?.gender || 'N/A'}).`,
+      chiefComplaint: state.chiefComplaint || 'Not specified',
+      historyOfPresentIllness: hpi,
+      pastMedicalHistory: state.pastMedicalHistory?.join(', ') || 'None reported',
+      medications: state.medications?.map((m: any) => typeof m === 'string' ? m : m.name).join(', ') || 'None reported',
+      allergies: state.allergies?.join(', ') || 'NKDA',
+      vitalHighlights: vitals ? `BP: ${vitals.bpSystolic || '-'}/${vitals.bpDiastolic || '-'} mmHg, Pulse: ${vitals.pulse || '-'} bpm, SpO2: ${vitals.spo2 || '-'}%, Temp: ${vitals.temperature || '-'}°F` : 'Vitals not recorded',
+      redFlags: state.redFlags || [],
+      sourceMap: {
+        chiefComplaint: 'Patient Intake',
+        historyOfPresentIllness: 'Universal Multilingual Clinical Intake Engine',
+      },
+    };
+  }
+
   private q(lang: 'EN' | 'HI' | 'GU', questions: Record<'EN' | 'HI' | 'GU', string>, options: Record<'EN' | 'HI' | 'GU', string[]>, category: QuestionOutput['questionCategory'], rationale: string): QuestionOutput {
     return { question: questions[lang], questionLanguage: lang, questionCategory: category, touchOptions: options[lang], isRedFlag: false, redFlagReason: null, isComplete: category === 'CLOSING', clinicalRationale: rationale };
   }

@@ -1,12 +1,14 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Hospital, Globe, UserPlus, Search, Bell, HelpCircle } from 'lucide-react';
+import { useLanguage } from '../../../store/LanguageContext';
+import { Hospital, Globe, UserPlus, Search, HelpCircle } from 'lucide-react';
 
 /**
  * Patient kiosk welcome screen — calm, accessible, touch-friendly.
  */
 export function WelcomePage() {
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useLanguage();
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8">
@@ -15,8 +17,8 @@ export function WelcomePage() {
         <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-600/20">
           <Hospital className="w-10 h-10 text-white" />
         </div>
-        <h1 className="text-4xl font-bold text-slate-800 tracking-tight">MediKiosk</h1>
-        <p className="text-lg text-slate-500 mt-2">Welcome to your healthcare assistant</p>
+        <h1 className="text-4xl font-bold text-slate-800 tracking-tight">{t('welcomeTitle')}</h1>
+        <p className="text-lg text-slate-500 mt-2">{t('welcomeSubtitle')}</p>
       </div>
 
       {/* Action Cards */}
@@ -31,8 +33,8 @@ export function WelcomePage() {
             <UserPlus className="w-7 h-7 text-blue-600" />
           </div>
           <div className="text-left">
-            <h2 className="text-lg font-semibold text-slate-800">Start New Visit</h2>
-            <p className="text-sm text-slate-500">Register and begin your consultation</p>
+            <h2 className="text-lg font-semibold text-slate-800">{t('startNewVisit')}</h2>
+            <p className="text-sm text-slate-500">{t('startNewVisitDesc')}</p>
           </div>
         </button>
 
@@ -46,12 +48,13 @@ export function WelcomePage() {
             <Search className="w-7 h-7 text-green-600" />
           </div>
           <div className="text-left">
-            <h2 className="text-lg font-semibold text-slate-800">Existing Patient</h2>
-            <p className="text-sm text-slate-500">Continue with your patient record</p>
+            <h2 className="text-lg font-semibold text-slate-800">{t('existingPatient')}</h2>
+            <p className="text-sm text-slate-500">{t('existingPatientDesc')}</p>
           </div>
         </button>
 
         <button
+          onClick={() => alert(t('needAssistanceDesc'))}
           className="w-full flex items-center gap-4 p-6 bg-white rounded-2xl shadow-sm border border-slate-200
             hover:shadow-md hover:border-amber-300 transition-all touch-target-lg group"
         >
@@ -60,8 +63,8 @@ export function WelcomePage() {
             <HelpCircle className="w-7 h-7 text-amber-600" />
           </div>
           <div className="text-left">
-            <h2 className="text-lg font-semibold text-slate-800">Need Staff Assistance</h2>
-            <p className="text-sm text-slate-500">Call a staff member for help</p>
+            <h2 className="text-lg font-semibold text-slate-800">{t('needAssistance')}</h2>
+            <p className="text-sm text-slate-500">{t('needAssistanceDesc')}</p>
           </div>
         </button>
       </div>
@@ -71,14 +74,18 @@ export function WelcomePage() {
         <Globe className="w-5 h-5 text-slate-400" />
         <div className="flex gap-2">
           {[
-            { code: 'en', label: 'English' },
-            { code: 'hi', label: 'हिन्दी' },
-            { code: 'gu', label: 'ગુજરાતી' },
+            { code: 'en' as const, label: 'English' },
+            { code: 'hi' as const, label: 'हिन्दी' },
+            { code: 'gu' as const, label: 'ગુજરાતી' },
           ].map((lang) => (
             <button
               key={lang.code}
-              className="px-4 py-2 rounded-full text-sm font-medium border border-slate-300
-                hover:bg-blue-50 hover:border-blue-300 transition-colors touch-target"
+              onClick={() => setLanguage(lang.code)}
+              className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors touch-target ${
+                language === lang.code
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
+              }`}
             >
               {lang.label}
             </button>

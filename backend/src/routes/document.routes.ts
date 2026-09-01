@@ -7,7 +7,7 @@ import prisma from '../config/db.js';
 import { createAuditLog } from '../middleware/audit.js';
 import { env } from '../config/env.js';
 import { AUDIT_ACTIONS } from '../config/constants.js';
-import type { AuthRequest } from '../middleware/auth.js';
+import { authenticateUserOrKiosk, type AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 // Document metadata and uploads are never anonymous. A kiosk may only access the patient

@@ -90,7 +90,7 @@ export class RedFlagEngine {
 
     // ── 4. SEVERE RESPIRATORY FAILURE ──────────────────────────────────
     const hasRespiratoryEmergency =
-      /\b(gasping|cannot breathe|severe breathlessness|suffocating|turning blue|सांस नहीं आ रही|दम घुट रहा है|શ્વાસ રુંધાવો|શ્વાસ નથી લેવાતો)\b/i.test(textToEvaluate);
+      /\b(gasping|cannot breathe|severe breathlessness|difficulty breathing|trouble breathing|suffocating|turning blue|सांस नहीं आ रही|दम घुट रहा है|શ્વાસ રુંધાવો|શ્વાસ નથી લેવાતો|શ્વાસ લેવામાં.*તકલીફ)\b/i.test(textToEvaluate);
 
     if (hasRespiratoryEmergency) {
       alerts.push({
