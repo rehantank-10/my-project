@@ -5,7 +5,8 @@ import { api } from '../../../services/api';
 import { speechProvider } from '../../../services/speech';
 import {
   Mic, MicOff, Send, Volume2, VolumeX, ShieldAlert,
-  Sparkles, CheckCircle2, User, Bot, RefreshCw, ArrowRight, CheckSquare, Leaf, HeartPulse
+  Sparkles, CheckCircle2, User, Bot, RefreshCw, ArrowRight, CheckSquare, Leaf, HeartPulse,
+  AlertCircle
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -32,6 +33,7 @@ export function IntakePage() {
   const [isComplete, setIsComplete] = useState(false);
   const [treatmentSystem, setTreatmentSystem] = useState<'ALLOPATHY' | 'AYURVEDA' | 'HOMEOPATHY' | null>(null);
   const [treatmentChoiceRequired, setTreatmentChoiceRequired] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const activeLangRef = useRef<LanguageCode>(language);
   useEffect(() => {
@@ -46,7 +48,7 @@ export function IntakePage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, touchOptions]);
+  }, [messages, touchOptions, isProcessing]);
 
   // Determine the treatment system from the visit. AYUSH visits let the patient choose Ayurveda or Homeopathy.
   useEffect(() => {
@@ -62,41 +64,87 @@ export function IntakePage() {
   // Start AI intake session after the treatment system is known.
   useEffect(() => {
     if (!treatmentSystem || treatmentChoiceRequired) return;
+
     let isMounted = true;
 
     const initSession = async () => {
       setIsProcessing(true);
+      setInitError(null);
+
       try {
-        const storedVisit = localStorage.getItem('medikiosk_active_visit');
-        const parsedVisit = storedVisit ? JSON.parse(storedVisit) : null;
-        const vId = visitId && visitId !== 'active' ? visitId : (parsedVisit?.id || 'active');
+        let vId = visitId && visitId !== 'active' && visitId !== 'current' ? visitId : null;
+        if (!vId) {
+          const storedVisit = localStorage.getItem('medikiosk_active_visit');
+          const parsedVisit = storedVisit ? JSON.parse(storedVisit) : null;
+          vId = parsedVisit?.id;
+        }
+
+        if (!vId) {
+          const storedPatient = localStorage.getItem('medikiosk_active_patient');
+          const parsedPatient = storedPatient ? JSON.parse(storedPatient) : null;
+          if (parsedPatient?.visits?.[0]?.id) {
+            vId = parsedPatient.visits[0].id;
+          }
+        }
+
+        if (!vId) {
+          throw new Error('No active visit was found for clinical intake. Please register or look up your patient record to begin.');
+        }
+
+        console.log('🩺 Starting MediKiosk conversation for visit:', vId);
+
         const currentLang = activeLangRef.current;
-        const res = await api.conversation.start(vId, currentLang.toUpperCase(), treatmentSystem !== 'ALLOPATHY', treatmentSystem);
+
+        const res = await api.conversation.start(
+          vId,
+          currentLang.toUpperCase(),
+          treatmentSystem !== 'ALLOPATHY',
+          treatmentSystem
+        );
 
         if (isMounted && res?.session) {
+          console.log('✅ Conversation session created:', res.session.id);
           setSession(res.session);
+
           const initialMsg: ChatMessage = {
-            id: res.message.id || 'welcome', role: 'AI', content: res.message.content,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), options: res.touchOptions || [],
+            id: res.message.id || 'welcome',
+            role: 'AI',
+            content: res.message.content,
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            options: res.touchOptions || [],
           };
+
           setMessages([initialMsg]);
           setTouchOptions(res.touchOptions || []);
-          if (audioEnabled) speechProvider.speak(res.message.content, currentLang);
+
+          if (audioEnabled) {
+            speechProvider.speak(res.message.content, currentLang);
+          }
         }
-      } catch (err) {
-        console.error('Conversation init error:', err);
+      } catch (err: any) {
+        console.error('❌ Conversation init error:', err);
+
+        if (isMounted) {
+          setInitError(err.message || 'Sorry, I could not start your clinical intake. Please return to the previous step and start the visit again.');
+        }
       } finally {
-        if (isMounted) setIsProcessing(false);
+        if (isMounted) {
+          setIsProcessing(false);
+        }
       }
     };
 
     initSession();
+
     return () => {
       isMounted = false;
       speechProvider.stopListening();
       speechProvider.stopSpeaking();
     };
-  }, [treatmentSystem, treatmentChoiceRequired]);
+  }, [visitId, treatmentSystem, treatmentChoiceRequired]);
 
   const chooseTreatmentSystem = (system: 'AYURVEDA' | 'HOMEOPATHY') => {
     localStorage.setItem('medikiosk_treatment_system', system);
@@ -125,7 +173,11 @@ export function IntakePage() {
 
     try {
       const currentLang = activeLangRef.current;
-      const sessionId = session?.id || 'demo-session';
+      if (!session?.id) {
+        throw new Error('Conversation session not ready. Please try again.');
+      }
+
+      const sessionId = session.id;
       const res = await api.conversation.sendMessage(sessionId, {
         content: textToSend.trim(),
         inputMethod: method,
@@ -150,7 +202,7 @@ export function IntakePage() {
 
         if (res.isComplete) {
           setIsComplete(true);
-          // If the patient explicitly chosen completion option (No, covers all symptoms), proceed immediately to next step
+          // If the patient explicitly chosen completion option, proceed to next step
           if (/covers all symptoms|complete intake|सब लक्षण बता दिए|ઇન્ટેક પૂર્ણ|તમામ લક્ષણો જણાવી દીધા|no, that covers/i.test(textToSend)) {
             setTimeout(() => {
               handleCompleteIntake();
@@ -165,6 +217,17 @@ export function IntakePage() {
       }
     } catch (err: any) {
       console.error('Send message error:', err);
+      const errMsg: ChatMessage = {
+        id: `err-${Date.now()}`,
+        role: 'AI',
+        content: activeLangRef.current === 'hi'
+          ? 'माफ़ कीजिए, प्रतिक्रिया प्राप्त करने में समस्या हुई। कृपया दोबारा प्रयास करें।'
+          : activeLangRef.current === 'gu'
+          ? 'માફ કરશો, પ્રતિસાદ મેળવવામાં સમસ્યા આવી. કૃપા કરીને ફરી પ્રયાસ કરો.'
+          : 'Sorry, there was an issue receiving a response. Please try again.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => [...prev, errMsg]);
     } finally {
       setIsProcessing(false);
     }
@@ -181,8 +244,8 @@ export function IntakePage() {
         activeLangRef.current,
         (transcript, isFinal) => {
           setInputText(transcript);
-          if (isFinal) {
-            handleSendMessage(transcript, 'VOICE');
+          if (isFinal && transcript.trim()) {
+            handleSendMessage(transcript.trim(), 'VOICE');
           }
         },
         (error) => {
@@ -264,6 +327,36 @@ export function IntakePage() {
               <HeartPulse className="w-7 h-7 text-blue-700 mb-3" />
               <div className="font-bold text-slate-900">Homeopathy</div>
               <div className="text-xs text-slate-600 mt-1">Individual symptom sensations and better/worse modalities.</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center space-y-4">
+          <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800">
+            {language === 'hi' ? 'यात्रा सत्र आवश्यक है' : language === 'gu' ? 'મુલાકાત સત્ર જરૂરી છે' : 'Visit Session Required'}
+          </h2>
+          <p className="text-sm text-slate-500">{initError}</p>
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              onClick={() => navigate('/kiosk/identify')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all touch-target"
+            >
+              {language === 'hi' ? 'रोगी पहचान / चेक-इन' : language === 'gu' ? 'દર્દી ઓળખ / ચેક-ઇન' : 'Start / Identify Patient'}
+            </button>
+            <button
+              onClick={() => navigate('/kiosk')}
+              className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all touch-target"
+            >
+              {language === 'hi' ? 'मुख्य पृष्ठ पर जाएँ' : language === 'gu' ? 'મુખ્ય પૃષ્ઠ પર જાઓ' : 'Back to Welcome Page'}
             </button>
           </div>
         </div>

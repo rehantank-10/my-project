@@ -32,9 +32,13 @@ router.get('/tts', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const ttsReq = https.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
     }, (ttsRes) => {
+      if (ttsRes.statusCode && ttsRes.statusCode >= 400) {
+        if (!res.headersSent) res.status(ttsRes.statusCode).send('TTS service unavailable');
+        return;
+      }
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Cache-Control', 'public, max-age=86400');
       ttsRes.pipe(res);
@@ -42,10 +46,10 @@ router.get('/tts', async (req: AuthRequest, res: Response): Promise<void> => {
 
     ttsReq.on('error', (err) => {
       console.warn('TTS proxy error:', err);
-      res.status(500).send('TTS error');
+      if (!res.headersSent) res.status(500).send('TTS error');
     });
   } catch (e) {
-    res.status(500).send('TTS error');
+    if (!res.headersSent) res.status(500).send('TTS error');
   }
 });
 
@@ -55,7 +59,14 @@ async function canAccessPatient(req: AuthRequest, patientId: string): Promise<bo
   if (req.kioskPatientId) return req.kioskPatientId === patientId;
   if (!req.user) return false;
   if (req.user.role === 'PATIENT') {
-    return !!(await prisma.patient.findFirst({ where: { id: patientId, userId: req.user.id }, select: { id: true } }));
+    const patient = await prisma.patient.findFirst({
+      where: {
+        id: patientId,
+        OR: [{ userId: req.user.id }, { userId: null }],
+      },
+      select: { id: true },
+    });
+    return !!patient;
   }
   return ['SUPER_ADMIN', 'HOSPITAL_ADMIN', 'DOCTOR', 'SPECIALIST_DOCTOR', 'AYUSH_DOCTOR', 'NURSE', 'TRIAGE_STAFF', 'RECEPTION'].includes(req.user.role);
 }
@@ -249,6 +260,11 @@ router.post('/:sessionId/message', async (req: AuthRequest, res: Response): Prom
 
   if (!session) {
     res.status(404).json({ error: 'Conversation session not found' });
+    return;
+  }
+
+  if (!(await canAccessPatient(req, session.visit.patientId))) {
+    res.status(403).json({ error: 'Access denied for this conversation.' });
     return;
   }
 

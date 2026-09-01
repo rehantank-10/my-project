@@ -30,7 +30,13 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 
   const isKioskOwner = req.kioskPatientId === patientId;
-  const isPatientOwner = req.user?.role === 'PATIENT' && !!(await prisma.patient.findFirst({ where: { id: patientId, userId: req.user.id }, select: { id: true } }));
+  const isPatientOwner = req.user?.role === 'PATIENT' && !!(await prisma.patient.findFirst({
+    where: {
+      id: patientId,
+      OR: [{ userId: req.user.id }, { userId: null }],
+    },
+    select: { id: true },
+  }));
   const isStaff = ['SUPER_ADMIN', 'HOSPITAL_ADMIN', 'DOCTOR', 'SPECIALIST_DOCTOR', 'AYUSH_DOCTOR', 'NURSE', 'TRIAGE_STAFF', 'RECEPTION'].includes(req.user?.role || '');
   if (!isKioskOwner && !isPatientOwner && !isStaff) {
     res.status(403).json({ error: 'You are not authorized to record consent for this patient.' });
@@ -93,7 +99,13 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
 router.get('/:patientId', async (req: AuthRequest, res: Response): Promise<void> => {
   const patientId = typeof req.params.patientId === 'string' ? req.params.patientId : req.params.patientId[0];
   const isKioskOwner = req.kioskPatientId === patientId;
-  const isPatientOwner = req.user?.role === 'PATIENT' && !!(await prisma.patient.findFirst({ where: { id: patientId, userId: req.user.id }, select: { id: true } }));
+  const isPatientOwner = req.user?.role === 'PATIENT' && !!(await prisma.patient.findFirst({
+    where: {
+      id: patientId,
+      OR: [{ userId: req.user.id }, { userId: null }],
+    },
+    select: { id: true },
+  }));
   const isStaff = ['SUPER_ADMIN', 'HOSPITAL_ADMIN', 'DOCTOR', 'SPECIALIST_DOCTOR', 'AYUSH_DOCTOR', 'NURSE', 'TRIAGE_STAFF', 'RECEPTION'].includes(req.user?.role || '');
   if (!isKioskOwner && !isPatientOwner && !isStaff) { res.status(403).json({ error: 'Access denied.' }); return; }
 

@@ -44,7 +44,8 @@ async function request<T = any>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getToken() || getKioskToken();
+  const isKioskFlow = typeof window !== 'undefined' && (window.location.pathname.startsWith('/kiosk') || path.startsWith('/conversation') || path.startsWith('/consent'));
+  const token = isKioskFlow ? (getKioskToken() || getToken()) : (getToken() || getKioskToken());
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

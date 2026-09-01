@@ -67,7 +67,13 @@ async function assertPatientAccess(req: AuthRequest, patientId: string): Promise
   const role = req.user.role;
   if (['SUPER_ADMIN', 'HOSPITAL_ADMIN', 'DOCTOR', 'SPECIALIST_DOCTOR', 'AYUSH_DOCTOR', 'NURSE', 'TRIAGE_STAFF', 'RECEPTION'].includes(role)) return true;
   if (role === 'PATIENT') {
-    const patient = await prisma.patient.findFirst({ where: { id: patientId, userId: req.user.id }, select: { id: true } });
+    const patient = await prisma.patient.findFirst({
+      where: {
+        id: patientId,
+        OR: [{ userId: req.user.id }, { userId: null }],
+      },
+      select: { id: true },
+    });
     return !!patient;
   }
   return false;

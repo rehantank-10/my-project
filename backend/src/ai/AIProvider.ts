@@ -304,6 +304,21 @@ export class UniversalClinicalEngine implements AIProvider {
   }
 }
 
+function safeParseJson(raw: string): any {
+  const clean = raw.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const firstBrace = clean.indexOf('{');
+    const lastBrace = clean.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const sub = clean.slice(firstBrace, lastBrace + 1);
+      return JSON.parse(sub);
+    }
+    throw new Error('Could not parse valid JSON from AI output');
+  }
+}
+
 export class GeminiAIProvider implements AIProvider {
   private genAI: GoogleGenerativeAI;
   private model: any;
@@ -338,8 +353,8 @@ Extract all clinical facts into English-normalized structured JSON with no markd
 }`;
 
       const res = await this.model.generateContent(prompt);
-      const text = res.response.text().replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(text);
+      const text = res.response.text();
+      const parsed = safeParseJson(text);
 
       const update: Partial<ClinicalState> = {};
       if (parsed.chiefComplaint && !state.chiefComplaint) {
@@ -416,8 +431,8 @@ Return ONLY valid JSON (no markdown fences):
 }`;
 
       const res = await this.model.generateContent(prompt);
-      const text = res.response.text().replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-      return JSON.parse(text);
+      const text = res.response.text();
+      return safeParseJson(text);
     } catch (e) {
       console.warn('Gemini generateNextQuestion fallback:', e);
       return this.fallback.generateNextQuestion(state, language, isAyush);
@@ -448,8 +463,8 @@ Return valid JSON with no markdown fences:
 }`;
 
       const res = await this.model.generateContent(prompt);
-      const text = res.response.text().replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-      return JSON.parse(text);
+      const text = res.response.text();
+      return safeParseJson(text);
     } catch (e) {
       return this.fallback.generateClinicalSummary(state, patient, vitals, documents);
     }

@@ -70,7 +70,12 @@ export class SpeechProvider {
 
     this.recognition.onerror = (event: any) => {
       this.isListening = false;
-      onError(event.error || 'Speech recognition error');
+      const errType = event.error || 'Speech recognition error';
+      if (errType === 'no-speech') {
+        onEnd();
+        return;
+      }
+      onError(errType);
     };
 
     this.recognition.onend = () => {
@@ -81,6 +86,7 @@ export class SpeechProvider {
     try {
       this.recognition.start();
     } catch (e: any) {
+      this.isListening = false;
       onError(e.message || 'Failed to start microphone');
     }
   }
@@ -91,6 +97,28 @@ export class SpeechProvider {
         this.recognition.stop();
       } catch {}
       this.isListening = false;
+    }
+  }
+
+  private speakNative(cleanText: string, language: 'en' | 'hi' | 'gu', resolve: () => void) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = language === 'hi' ? 'hi-IN' : language === 'gu' ? 'gu-IN' : 'en-IN';
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        resolve();
+      }
+    } else {
+      resolve();
     }
   }
 
@@ -110,39 +138,28 @@ export class SpeechProvider {
       const cleanApiBase = rawApiBase.trim().replace(/\/+$/, '');
       const audioUrl = `${cleanApiBase}/conversation/tts?text=${encodeURIComponent(cleanText)}&lang=${langParam}`;
 
-      const audio = new Audio(audioUrl);
-      this.currentAudio = audio;
+      try {
+        const audio = new Audio(audioUrl);
+        this.currentAudio = audio;
 
-      audio.onended = () => {
-        this.currentAudio = null;
-        resolve();
-      };
-
-      audio.onerror = () => {
-        // Fallback to browser Web Speech API if offline
-        if ('speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance(cleanText);
-          utterance.lang = language === 'hi' ? 'hi-IN' : language === 'gu' ? 'gu-IN' : 'en-IN';
-          utterance.onend = () => resolve();
-          utterance.onerror = () => resolve();
-          window.speechSynthesis.speak(utterance);
-        } else {
+        audio.onended = () => {
+          this.currentAudio = null;
           resolve();
-        }
-      };
+        };
 
-      audio.play().catch(() => {
-        // Fallback for autoplay policy
-        if ('speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance(cleanText);
-          utterance.lang = language === 'hi' ? 'hi-IN' : language === 'gu' ? 'gu-IN' : 'en-IN';
-          utterance.onend = () => resolve();
-          utterance.onerror = () => resolve();
-          window.speechSynthesis.speak(utterance);
-        } else {
-          resolve();
+        audio.onerror = () => {
+          this.speakNative(cleanText, language, resolve);
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            this.speakNative(cleanText, language, resolve);
+          });
         }
-      });
+      } catch {
+        this.speakNative(cleanText, language, resolve);
+      }
     });
   }
 
