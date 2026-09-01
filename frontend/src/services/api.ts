@@ -166,7 +166,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ visitId, language, isAyush, treatmentSystem }),
       }),
-    sendMessage: (sessionId: string, data: { content: string; inputMethod?: string; language?: string; rawTranscript?: string; isAyush?: boolean }) =>
+sendMessage: (sessionId: string, data: { content: string; inputMethod?: string; language?: string; rawTranscript?: string; isAyush?: boolean; treatmentSystem?: 'ALLOPATHY' | 'AYURVEDA' | 'HOMEOPATHY' }) =>
       request(`/conversation/${sessionId}/message`, {
         method: 'POST',
         body: JSON.stringify(data),
